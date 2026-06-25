@@ -17,6 +17,7 @@ lib/
 *.exe
 *.out
 *.app
+/executables
 
 # Static and shared libraries
 
