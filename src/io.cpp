@@ -1,5 +1,8 @@
 #include "cookbook/io.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -7,7 +10,12 @@
 namespace cookbook::io {
 namespace {
 
-std::ifstream openInputFile(const std::string& path, std::ios::openmode mode = std::ios::in) {
+namespace fs = std::filesystem;
+
+std::ifstream openInputFile(
+    const std::string& path,
+    std::ios::openmode mode = std::ios::in
+) {
     std::ifstream file(path, mode);
 
     if (!file) {
@@ -17,7 +25,10 @@ std::ifstream openInputFile(const std::string& path, std::ios::openmode mode = s
     return file;
 }
 
-std::ofstream openOutputFile(const std::string& path, std::ios::openmode mode = std::ios::out) {
+std::ofstream openOutputFile(
+    const std::string& path,
+    std::ios::openmode mode = std::ios::out
+) {
     std::ofstream file(path, mode);
 
     if (!file) {
@@ -31,6 +42,52 @@ void removeTrailingCarriageReturn(std::string& line) {
     if (!line.empty() && line.back() == '\r') {
         line.pop_back();
     }
+}
+
+std::string toLower(std::string text) {
+    std::transform(
+        text.begin(),
+        text.end(),
+        text.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        }
+    );
+
+    return text;
+}
+
+std::string normalizeExtension(std::string extension) {
+    if (extension.empty()) {
+        return extension;
+    }
+
+    if (extension.front() != '.') {
+        extension.insert(extension.begin(), '.');
+    }
+
+    return toLower(extension);
+}
+
+bool pathHasExtension(const fs::path& path, const std::string& normalized_extension) {
+    return normalizeExtension(path.extension().string()) == normalized_extension;
+}
+
+void requireDirectory(const std::string& directory_path) {
+    std::error_code error;
+
+    if (!fs::exists(directory_path, error) || error) {
+        throw std::runtime_error("Directory does not exist: " + directory_path);
+    }
+
+    if (!fs::is_directory(directory_path, error) || error) {
+        throw std::runtime_error("Path is not a directory: " + directory_path);
+    }
+}
+
+std::vector<std::string> sortPaths(std::vector<std::string> paths) {
+    std::sort(paths.begin(), paths.end());
+    return paths;
 }
 
 std::vector<std::string> parseCsvLine(const std::string& line) {
@@ -53,7 +110,9 @@ std::vector<std::string> parseCsvLine(const std::string& line) {
                     inside_quotes = false;
 
                     if (i + 1 < line.size() && line[i + 1] != ',') {
-                        throw std::runtime_error("Malformed CSV line: unexpected character after quote");
+                        throw std::runtime_error(
+                            "Malformed CSV line: unexpected character after quote"
+                        );
                     }
                 }
             } else {
@@ -65,7 +124,9 @@ std::vector<std::string> parseCsvLine(const std::string& line) {
                 current_field.clear();
             } else if (current_char == '"') {
                 if (!current_field.empty()) {
-                    throw std::runtime_error("Malformed CSV line: quote inside unquoted field");
+                    throw std::runtime_error(
+                        "Malformed CSV line: quote inside unquoted field"
+                    );
                 }
 
                 inside_quotes = true;
@@ -174,8 +235,25 @@ void writeWholeFile(const std::string& path, const std::string& contents) {
 }
 
 bool fileExists(const std::string& path) {
-    std::ifstream file(path, std::ios::in | std::ios::binary);
-    return file.good();
+    std::error_code error;
+    return fs::is_regular_file(path, error) && !error;
+}
+
+bool directoryExists(const std::string& path) {
+    std::error_code error;
+    return fs::is_directory(path, error) && !error;
+}
+
+void createDirectoryIfMissing(const std::string& path) {
+    std::error_code error;
+
+    if (fs::exists(path, error) && !fs::is_directory(path, error)) {
+        throw std::runtime_error("Path exists but is not a directory: " + path);
+    }
+
+    if (!fs::create_directories(path, error) && error) {
+        throw std::runtime_error("Could not create directory: " + path);
+    }
 }
 
 std::size_t countLines(const std::string& path) {
@@ -287,11 +365,20 @@ void copyFileContents(
     const std::string& destination_path
 ) {
     if (source_path == destination_path) {
-        throw std::runtime_error("Source and destination paths are the same: " + source_path);
+        throw std::runtime_error(
+            "Source and destination paths are the same: " + source_path
+        );
     }
 
-    std::ifstream source = openInputFile(source_path, std::ios::in | std::ios::binary);
-    std::ofstream destination = openOutputFile(destination_path, std::ios::out | std::ios::binary);
+    std::ifstream source = openInputFile(
+        source_path,
+        std::ios::in | std::ios::binary
+    );
+
+    std::ofstream destination = openOutputFile(
+        destination_path,
+        std::ios::out | std::ios::binary
+    );
 
     destination << source.rdbuf();
 
@@ -302,6 +389,82 @@ void copyFileContents(
     if (source.bad()) {
         throw std::runtime_error("Error while reading source file: " + source_path);
     }
+}
+
+std::vector<std::string> listFilesInDirectory(const std::string& directory_path) {
+    requireDirectory(directory_path);
+
+    std::vector<std::string> files;
+
+    for (const fs::directory_entry& entry :
+         fs::directory_iterator(directory_path, fs::directory_options::skip_permission_denied)) {
+        if (entry.is_regular_file()) {
+            files.push_back(entry.path().string());
+        }
+    }
+
+    return sortPaths(files);
+}
+
+std::vector<std::string> listFilesInDirectoryWithExtension(
+    const std::string& directory_path,
+    const std::string& extension
+) {
+    requireDirectory(directory_path);
+
+    const std::string normalized_extension = normalizeExtension(extension);
+    std::vector<std::string> files;
+
+    for (const fs::directory_entry& entry :
+         fs::directory_iterator(directory_path, fs::directory_options::skip_permission_denied)) {
+        if (entry.is_regular_file() &&
+            pathHasExtension(entry.path(), normalized_extension)) {
+            files.push_back(entry.path().string());
+        }
+    }
+
+    return sortPaths(files);
+}
+
+std::vector<std::string> listFilesRecursively(const std::string& directory_path) {
+    requireDirectory(directory_path);
+
+    std::vector<std::string> files;
+
+    for (const fs::directory_entry& entry :
+         fs::recursive_directory_iterator(
+             directory_path,
+             fs::directory_options::skip_permission_denied
+         )) {
+        if (entry.is_regular_file()) {
+            files.push_back(entry.path().string());
+        }
+    }
+
+    return sortPaths(files);
+}
+
+std::vector<std::string> listFilesRecursivelyWithExtension(
+    const std::string& directory_path,
+    const std::string& extension
+) {
+    requireDirectory(directory_path);
+
+    const std::string normalized_extension = normalizeExtension(extension);
+    std::vector<std::string> files;
+
+    for (const fs::directory_entry& entry :
+         fs::recursive_directory_iterator(
+             directory_path,
+             fs::directory_options::skip_permission_denied
+         )) {
+        if (entry.is_regular_file() &&
+            pathHasExtension(entry.path(), normalized_extension)) {
+            files.push_back(entry.path().string());
+        }
+    }
+
+    return sortPaths(files);
 }
 
 } // namespace cookbook::io

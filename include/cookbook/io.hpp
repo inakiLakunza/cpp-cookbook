@@ -1,4 +1,5 @@
 #pragma once
+
 #include <cstddef>
 #include <map>
 #include <ostream>
@@ -22,8 +23,14 @@ std::string readWholeFile(const std::string& path);
 // Writes one string to a file, replacing existing contents.
 void writeWholeFile(const std::string& path, const std::string& contents);
 
-// Returns true if a file can be opened for reading.
+// Returns true if the path exists and is a regular file.
 bool fileExists(const std::string& path);
+
+// Returns true if the path exists and is a directory.
+bool directoryExists(const std::string& path);
+
+// Creates a directory, including missing parent directories, if it does not already exist.
+void createDirectoryIfMissing(const std::string& path);
 
 // Counts the number of lines in a text file.
 std::size_t countLines(const std::string& path);
@@ -47,6 +54,24 @@ std::vector<double> readNumbersFromFile(const std::string& path);
 void copyFileContents(
     const std::string& source_path,
     const std::string& destination_path
+);
+
+// Lists regular files directly inside a directory, excluding subdirectories.
+std::vector<std::string> listFilesInDirectory(const std::string& directory_path);
+
+// Lists regular files directly inside a directory with a given extension.
+std::vector<std::string> listFilesInDirectoryWithExtension(
+    const std::string& directory_path,
+    const std::string& extension
+);
+
+// Lists regular files inside a directory and all its subdirectories.
+std::vector<std::string> listFilesRecursively(const std::string& directory_path);
+
+// Lists regular files inside a directory and all its subdirectories with a given extension.
+std::vector<std::string> listFilesRecursivelyWithExtension(
+    const std::string& directory_path,
+    const std::string& extension
 );
 
 // Prints a vector to an output stream using a separator.
